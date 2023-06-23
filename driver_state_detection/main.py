@@ -9,6 +9,7 @@ from Utils import get_face_area
 from Eye_Dector_Module import EyeDetector as EyeDet
 from Pose_Estimation_Module import HeadPoseEstimator as HeadPoseEst
 from Attention_Scorer_Module import AttentionScorer as AttScorer
+from Yawn_Detector_Module import YawnDetector as yw
 
 # camera matrix obtained from the camera calibration script, using a 9x6 chessboard
 camera_matrix = np.array(
@@ -20,6 +21,42 @@ camera_matrix = np.array(
 dist_coeffs = np.array(
     [[-0.03792548, 0.09233237, 0.00419088, 0.00317323, -0.15804257]], dtype="double")
 
+def euclidean_distance(point1, point2):
+    return np.sqrt((point2.x - point1.x) ** 2 + (point2.y - point1.y) ** 2)
+
+def compute_mouth_aspect_ratio(landmarks):
+    left_point = landmarks[48]
+    right_point = landmarks[54]
+    top_point = (landmarks[51] + landmarks[62]) / 2
+    bottom_point = (landmarks[57] + landmarks[66]) / 2
+
+    # Compute the Euclidean distances between the landmarks
+    horizontal_distance = euclidean_distance(left_point, right_point)
+    vertical_distance = euclidean_distance(top_point, bottom_point)
+
+    # Compute the mouth aspect ratio
+    mouth_aspect_ratio = vertical_distance / horizontal_distance
+    return mouth_aspect_ratio
+def detect_yawn(frame, predictor, gray, face_rect):
+        # Convert the face rectangle to a dlib rectangle object
+        dlib_rect = dlib.rectangle(
+        left=int(face_rect.left()),
+        top=int(face_rect.top()),
+        right=int(face_rect.right()),
+        bottom=int(face_rect.bottom())
+        )
+
+        # Detect landmarks within the face region
+        landmarks = predictor(gray, dlib_rect)
+
+        # Compute mouth aspect ratio
+        mouth_aspect_ratio = compute_mouth_aspect_ratio(landmarks)
+
+        # Check if the mouth aspect ratio indicates a yawn
+        if mouth_aspect_ratio >= 0.3:
+            return True
+        else:
+            return False
 
 def main():
 
@@ -108,7 +145,6 @@ def main():
     if not cap.isOpened():  # if the camera can't be opened exit the program
         print("Cannot open camera")
         exit()
-
     while True:  # infinite loop for webcam video capture
 
         delta_time = time.perf_counter() - prev_time  # delta time for FPS capping
@@ -167,6 +203,21 @@ def main():
                 # compute the head pose
                 frame_det, roll, pitch, yaw = Head_pose.get_pose(
                     frame=frame, landmarks=landmarks)
+                
+                ctime = time.perf_counter()
+                fps = 1.0 / float(ctime - ptime)
+                ptime = ctime
+
+                
+                mouth_aspect_ratio = yw.compute_mouth_aspect_ratio(landmarks)
+                yawn = yw.detect_yawn(mouth_aspect_ratio,1.5)
+
+                cv2.putText(frame, "Mouth Aspect Ratio" + str(round(mouth_aspect_ratio, 3)), (10, 140),
+                cv2.FONT_HERSHEY_PLAIN, 2, (255, 255, 255), 1, cv2.LINE_AA)
+
+                if yawn:
+                    cv2.putText(frame, "YAWN!", (10, 160),
+                        cv2.FONT_HERSHEY_PLAIN, 1, (0, 0, 255), 1, cv2.LINE_AA)
 
                 # if the head pose estimation is successful, show the results
                 if frame_det is not None:
